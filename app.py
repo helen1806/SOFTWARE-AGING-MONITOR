@@ -58,3 +58,40 @@ def dashboard():
         })
     
     return render_template('dashboard.html', websites=website_data)
+
+
+@app.route('/website/<int:id>') #website id
+def website_detail(id):
+    website = Website.query.get_or_404(id) #if id not receieved ,show error 404 
+    period = request.args.get('period', 'day')
+    stats = get_website_stats(id, period)
+    
+    now = datetime.utcnow()
+    if period == 'day':
+        start_time = now - timedelta(days=1)
+    elif period == 'week':
+        start_time = now - timedelta(weeks=1)
+    elif period == 'month':
+        start_time = now - timedelta(days=30)
+    else:
+        start_time = now - timedelta(days=365)
+    
+    checks = MonitoringCheck.query.filter(
+        MonitoringCheck.website_id == id,
+        MonitoringCheck.checked_at >= start_time
+    ).order_by(MonitoringCheck.checked_at.desc()).limit(100).all()
+    
+    incidents = Incident.query.filter(
+        Incident.website_id == id,
+        Incident.started_at >= start_time
+    ).order_by(Incident.started_at.desc()).all()
+    
+    subpages = website.subpages.all()
+    
+    return render_template('website_detail.html', 
+                         website=website, 
+                         stats=stats, 
+                         checks=checks, 
+                         incidents=incidents,
+                         subpages=subpages,
+                         period=period)
