@@ -156,3 +156,146 @@ def generate_report(website_id):
         }
     })
 
+
+@app.route('/api/websites', methods=['GET', 'POST'])
+def api_websites():
+    if request.method == 'POST':
+        data = request.json
+        website = Website(
+            name=data['name'],
+            url=data['url'],
+            monitoring_interval=data.get('monitoring_interval', 1),
+            response_threshold=data.get('response_threshold', 5000)
+        )
+        db.session.add(website)
+        db.session.commit()
+        
+        if scheduler_started:
+            scheduler.add_job(
+                func=monitor_website,
+                trigger='interval',
+                minutes=website.monitoring_interval,
+                args=[app, website.id],
+                id=f'monitor_{website.id}',
+                replace_existing=True
+            )
+            monitor_website(app, website.id)
+        
+        return jsonify({'id': website.id, 'message': 'Website added successfully'})
+    
+    websites = Website.query.all()
+    return jsonify([{
+        'id': w.id,
+        'name': w.name,
+        'url': w.url,
+        'monitoring_interval': w.monitoring_interval,
+        'is_active': w.is_active
+    } for w in websites])
+
+@app.route('/api/websites/<int:id>', methods=['DELETE', 'PUT'])
+def api_website(id):
+    website = Website.query.get_or_404(id)
+    
+    if request.method == 'DELETE':
+        if scheduler_started:
+            try:
+                scheduler.remove_job(f'monitor_{id}')
+            except:
+                pass
+        db.session.delete(website)
+        db.session.commit()
+        return jsonify({'message': 'Website deleted'})
+    
+    if request.method == 'PUT':
+        data = request.json
+        website.name = data.get('name', website.name)
+        website.url = data.get('url', website.url)
+        website.monitoring_interval = data.get('monitoring_interval', website.monitoring_interval)
+        website.response_threshold = data.get('response_threshold', website.response_threshold)
+        website.is_active = data.get('is_active', website.is_active)
+        db.session.commit()
+        
+        if scheduler_started:
+            try:
+                scheduler.remove_job(f'monitor_{id}')
+            except:
+                pass
+            if website.is_active:
+                scheduler.add_job(
+                    func=monitor_website,
+                    trigger='interval',
+                    minutes=website.monitoring_interval,
+                    args=[app, website.id],
+                    id=f'monitor_{id}',
+                    replace_existing=True
+                )
+        
+        return jsonify({'message': 'Website updated'})
+
+@app.route('/api/websites/<int:id>/subpages', methods=['GET', 'POST'])
+def api_subpages(id):
+    website = Website.query.get_or_404(id)
+    
+    if request.method == 'POST':
+        data = request.json
+        subpage = SubPage(
+            website_id=id,
+            url=data['url'],
+            name=data.get('name', '')
+        )
+        db.session.add(subpage)
+        db.session.commit()
+        return jsonify({'id': subpage.id, 'message': 'Subpage added'})
+    
+    subpages = website.subpages.all()
+    return jsonify([{
+        'id': s.id,
+        'url': s.url,
+        'name': s.name,
+        'is_active': s.is_active
+    } for s in subpages])
+
+@app.route('/api/subpages/<int:id>', methods=['DELETE'])
+def api_subpage(id):
+    subpage = SubPage.query.get_or_404(id)
+    db.session.delete(subpage)
+    db.session.commit()
+    return jsonify({'message': 'Subpage deleted'})
+
+@app.route('/api/check/<int:website_id>')
+def trigger_check(website_id):
+    monitor_website(app, website_id)
+    return jsonify({'message': 'Check triggered'})
+
+@app.route('/api/chart-data/<int:website_id>')
+def chart_data(website_id):
+    period = request.args.get('period', 'day')
+    now = datetime.utcnow()
+    
+    if period == 'day':
+        start_time = now - timedelta(days=1)
+    elif period == 'week':
+        start_time = now - timedelta(weeks=1)
+    elif period == 'month':
+        start_time = now - timedelta(days=30)
+    else:
+        start_time = now - timedelta(days=365)
+    
+    checks = MonitoringCheck.query.filter(
+        MonitoringCheck.website_id == website_id,
+        MonitoringCheck.checked_at >= start_time
+    ).order_by(MonitoringCheck.checked_at.asc()).all()
+    
+    return jsonify({
+        'labels': [c.checked_at.strftime('%Y-%m-%d %H:%M') for c in checks],
+        'response_times': [c.response_time if c.response_time else 0 for c in checks],
+        'status': [1 if c.is_up else 0 for c in checks]
+    })
+
+with app.app_context():
+    db.create_all()
+
+if __name__ == '__main__': #required block to prevent from being used when imported
+    start_scheduler()
+    app.run(host='0.0.0.0', port=5000, debug=True)
+
