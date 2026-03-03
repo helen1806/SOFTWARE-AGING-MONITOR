@@ -39,3 +39,22 @@ def schedule_all_monitors():
                 id=f'monitor_{website.id}',
                 replace_existing=True
             )
+
+@app.route('/')
+def dashboard():
+    websites = Website.query.all()
+    website_data = []
+    
+    for website in websites:
+        last_check = MonitoringCheck.query.filter_by(website_id=website.id).order_by(MonitoringCheck.checked_at.desc()).first()
+        active_incidents = Incident.query.filter_by(website_id=website.id, is_resolved=False).count()
+        stats = get_website_stats(website.id, 'day')
+        
+        website_data.append({
+            'website': website,
+            'last_check': last_check,
+            'active_incidents': active_incidents,
+            'stats': stats
+        })
+    
+    return render_template('dashboard.html', websites=website_data)
