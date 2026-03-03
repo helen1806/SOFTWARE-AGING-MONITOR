@@ -83,9 +83,7 @@ def check_url(url, timeout=30): #check if the website is working
             'error_message': str(e)
         }
 
-def determine_incident_type(result, threshold): #result is output of checkurl-monitor_webs
-
-
+def determine_incident_type(result, threshold):
     if result['error_message']:
         if 'timeout' in result['error_message'].lower():
             return 'timeout'
@@ -100,11 +98,11 @@ def determine_incident_type(result, threshold): #result is output of checkurl-mo
         elif result['status_code'] >= 400:
             return 'client_error'
     
-    if result['response_time'] and result['response_time'] > threshold:
+    # Only flag slow response if status is NOT 200 OK
+    if result['status_code'] != 200 and result['response_time'] and result['response_time'] > threshold:
         return 'slow_response'
     
     return None
-
 def monitor_website(app, website_id):
     with app.app_context():
         website = Website.query.get(website_id)
