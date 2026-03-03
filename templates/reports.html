@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+
+{% block title %}Reports - Software Aging Monitor{% endblock %}
+
+{% block content %}
+<h2 class="mb-4"><i class="bi bi-file-earmark-bar-graph me-2"></i>Performance Reports</h2>
+
+<div class="row">
+    <div class="col-lg-4 mb-4">
+        <div class="card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="bi bi-gear me-2"></i>Generate Report</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Select Website</label>
+                    <select class="form-select" id="reportWebsite">
+                        {% for website in websites %}
+                        <option value="{{ website.id }}">{{ website.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Report Period</label>
+                    <select class="form-select" id="reportPeriod">
+                        <option value="week">Weekly Report</option>
+                        <option value="month">Monthly Report</option>
+                        <option value="year">Yearly Report</option>
+                    </select>
+                </div>
+                <button class="btn btn-primary w-100" onclick="generateReport()">
+                    <i class="bi bi-download me-1"></i>Generate Report
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-8 mb-4">
+        <div class="card" id="reportCard" style="display: none;">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-file-text me-2"></i>Report Results</h5>
+                <button class="btn btn-sm btn-outline-primary" onclick="downloadReport()">
+                    <i class="bi bi-download me-1"></i>Export JSON
+                </button>
+            </div>
+            <div class="card-body" id="reportContent"></div>
+        </div>
+        
+        <div class="card" id="noReportCard">
+            <div class="card-body text-center py-5">
+                <i class="bi bi-file-earmark-bar-graph display-1 text-muted mb-3"></i>
+                <h5>No Report Generated</h5>
+                <p class="text-muted">Select a website and period to generate a performance report.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentReport = null;
+
+async function generateReport() {
+    const websiteId = document.getElementById('reportWebsite').value;
+    const period = document.getElementById('reportPeriod').value;
+    
+    if (!websiteId) {
+        alert('Please select a website');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/report/${websiteId}?period=${period}`);
+        currentReport = await response.json();
+        displayReport(currentReport);
+    } catch (error) {
+        alert('Error generating report: ' + error.message);
+    }
+}
+
+function displayReport(report) {
+    document.getElementById('noReportCard').style.display = 'none';
+    document.getElementById('reportCard').style.display = 'block';
+    
+    const periodLabels = { week: 'Weekly', month: 'Monthly', year: 'Yearly' };
+    
+    let html = `
+        <div class="mb-4">
+            <h4>${report.website}</h4>
+            <p class="text-muted">${report.url}</p>
+            <span class="badge bg-primary">${periodLabels[report.period]} Report</span>
+            <small class="text-muted ms-2">Generated: ${new Date(report.generated_at).toLocaleString()}</small>
+        </div>
+        
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="bg-light rounded p-3 text-center">
+                    <div class="h4 text-success mb-0">${report.stats.uptime_percentage}%</div>
+                    <small class="text-muted">Uptime</small>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="bg-light rounded p-3 text-center">
+                    <div class="h4 mb-0">${Math.round(report.stats.avg_response_time)}ms</div>
+                    <small class="text-muted">Avg Response</small>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="bg-light rounded p-3 text-center">
+                    <div class="h4 text-warning mb-0">${report.stats.total_incidents}</div>
+                    <small class="text-muted">Total Incidents</small>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="bg-light rounded p-3 text-center">
+                    <div class="h4 text-danger mb-0">${formatDuration(report.stats.total_downtime_seconds)}</div>
+                    <small class="text-muted">Total Downtime</small>
+                </div>
+            </div>
+        </div>
+        
+        <h5 class="mb-3">Response Time Statistics</h5>
+        <div class="table-responsive mb-4">
+            <table class="table table-sm">
+                <tr>
+                    <td>Minimum Response Time</td>
+                    <td class="fw-bold">${Math.round(report.response_time_data.min)}ms</td>
+                </tr>
+                <tr>
+                    <td>Maximum Response Time</td>
+                    <td class="fw-bold">${Math.round(report.response_time_data.max)}ms</td>
+                </tr>
+                <tr>
+                    <td>Average Response Time</td>
+                    <td class="fw-bold">${Math.round(report.response_time_data.avg)}ms</td>
+                </tr>
+            </table>
+        </div>
+    `;
+    
+    if (report.incidents.length > 0) {
+        html += `<h5 class="mb-3">Incident History</h5>`;
+        html += `<div class="table-responsive"><table class="table table-sm">
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    <th>Severity</th>
+                    <th>Started</th>
+                    <th>Duration</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>`;
+        
+        for (const inc of report.incidents) {
+            html += `
+                <tr>
+                    <td>${inc.type.replace('_', ' ')}</td>
+                    <td><span class="badge bg-${inc.severity === 'critical' ? 'danger' : 'warning'}">${inc.severity}</span></td>
+                    <td>${new Date(inc.started_at).toLocaleString()}</td>
+                    <td>${inc.duration ? formatDuration(inc.duration) : '-'}</td>
+                    <td><span class="badge bg-${inc.resolved ? 'success' : 'danger'}">${inc.resolved ? 'Resolved' : 'Active'}</span></td>
+                </tr>
+                <tr>
+                    <td colspan="5" class="small text-muted">
+                        <strong>Cause:</strong> ${inc.cause}<br>
+                        <strong>Suggestion:</strong> ${inc.suggestion}
+                    </td>
+                </tr>
+            `;
+        }
+        
+        html += `</tbody></table></div>`;
+    } else {
+        html += `<div class="alert alert-success"><i class="bi bi-check-circle me-2"></i>No incidents recorded during this period.</div>`;
+    }
+    
+    document.getElementById('reportContent').innerHTML = html;
+}
+
+function formatDuration(seconds) {
+    if (!seconds || seconds === 0) return '0s';
+    if (seconds < 60) return seconds + 's';
+    if (seconds < 3600) return Math.round(seconds / 60) + 'm';
+    return Math.round(seconds / 3600) + 'h ' + Math.round((seconds % 3600) / 60) + 'm';
+}
+
+function downloadReport() {
+    if (!currentReport) return;
+    
+    const blob = new Blob([JSON.stringify(currentReport, null, 2)], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `report_${currentReport.website}_${currentReport.period}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+</script>
+{% endblock %}
