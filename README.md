@@ -54,7 +54,7 @@
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
-[![Dashboard Screenshot][product-screenshot]](https://example.com)
+[![Dashboard Screenshot][product-screenshot]]
 
 The **Software Aging Monitor** is a Flask-based web application designed to detect and track software aging symptoms across websites and services. It continuously monitors response times, uptime, and performance degradation patterns — helping developers and teams identify issues before they escalate into failures.
 
