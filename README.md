@@ -374,7 +374,7 @@ Project Link: [https://github.com/helen1806/SOFTWARE-AGING-MONITOR](https://gith
 
 [linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
 [linkedin-url]: https://www.linkedin.com/in/helen-sebastian
-[product-screenshot]: images/screenshot.png
+[product-screenshot]:  images/dashboard.png
 [dashboard-screenshot]: images/dashboard.png
 [Chartjs]: https://img.shields.io/badge/Chart.js-FF6384?style=for-the-badge&logo=chartdotjs&logoColor=white
 [Chartjs-url]: https://www.chartjs.org/
