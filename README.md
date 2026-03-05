@@ -17,9 +17,7 @@
 
   <p align="center">
     A web-based monitoring dashboard to track website availability, response time, and software aging symptoms in real time.
-    <br />
-    <a href="https://github.com/helen1806/SOFTWARE-AGING-MONITOR">View Demo</a>
-    &middot;
+    
   </p>
 </div>
 
@@ -211,7 +209,6 @@ The dashboard provides key monitoring indicators:
 - Total incidents
 - Historical response time chart
 
-[![Dashboard Overview][dashboard-screenshot]](https://example.com)
 
 ---
 
@@ -322,7 +319,7 @@ This enables early detection of:
     - [ ] Memory utilization tracking
     - [ ] System resource dashboards
 
-- [ ] **Feature 2 — Advanced Incident Detection**
+- [ ] **Feature 2 —  Incident Detection**
     - [ ] Anomaly detection algorithms
     - [ ] Performance degradation alerts
     - [ ] Pattern recognition for software aging
@@ -360,7 +357,7 @@ If you have a suggestion that would make this better, please fork the repo and c
 <!-- CONTACT -->
 ## Contact
 
-Your Name -  helenmarys1023@gmail.com
+Name -  helenmarys1023@gmail.com
 
 Project Link: [https://github.com/helen1806/SOFTWARE-AGING-MONITOR](https://github.com/helen1806/SOFTWARE-AGING-MONITOR)
 
