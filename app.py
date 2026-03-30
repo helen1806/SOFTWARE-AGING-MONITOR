@@ -47,9 +47,22 @@ def dashboard():
     websites = Website.query.all()
     website_data = []
     
+    
+    active_incidents_query = db.session.query(
+        Incident.website_id, db.func.count(Incident.id)
+    ).filter_by(is_resolved=False).group_by(Incident.website_id).all()
+    active_incidents_map = dict(active_incidents_query)
+    
+    
+    latest_checks = MonitoringCheck.query.distinct(MonitoringCheck.website_id)\
+        .order_by(MonitoringCheck.website_id, MonitoringCheck.checked_at.desc()).all()
+    last_check_map = {check.website_id: check for check in latest_checks}
+    
     for website in websites:
-        last_check = MonitoringCheck.query.filter_by(website_id=website.id).order_by(MonitoringCheck.checked_at.desc()).first()
-        active_incidents = Incident.query.filter_by(website_id=website.id, is_resolved=False).count()
+        
+        last_check = last_check_map.get(website.id)
+        active_incidents = active_incidents_map.get(website.id, 0)
+     
         stats = get_website_stats(website.id, 'day')
         
         website_data.append({
@@ -179,9 +192,9 @@ def api_websites():
                 minutes=website.monitoring_interval,
                 args=[app, website.id],
                 id=f'monitor_{website.id}',
-                replace_existing=True
+                replace_existing=True,
+                next_run_time=datetime.utcnow() # Schedules the first check instantly in the background thread
             )
-            monitor_website(app, website.id)
         
         return jsonify({'id': website.id, 'message': 'Website added successfully'})
     
@@ -299,5 +312,5 @@ with app.app_context():
 
 if __name__ == '__main__': 
     start_scheduler()
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=False)
 
