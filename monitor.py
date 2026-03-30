@@ -98,8 +98,8 @@ def determine_incident_type(result, threshold):
         elif result['status_code'] >= 400:
             return 'client_error'
     
-    # Only flag slow response if status is NOT 200 OK
-    if result['status_code'] != 200 and result['response_time'] and result['response_time'] > threshold:
+    # Flag slow response if latency exceeds the user's defined threshold (regardless of 200 OK status)
+    if result['response_time'] and result['response_time'] > threshold:
         return 'slow_response'
     
     return None
