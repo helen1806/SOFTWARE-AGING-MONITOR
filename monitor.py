@@ -113,6 +113,8 @@ def monitor_website(app, website_id):
         for subpage in website.subpages.filter_by(is_active=True).all():
             urls_to_check.append((subpage.url, subpage.name or subpage.url))
         
+        any_incident_detected = False
+        
         for url, name in urls_to_check:
             result = check_url(url)
             
@@ -128,6 +130,7 @@ def monitor_website(app, website_id):
             incident_type = determine_incident_type(result, website.response_threshold)
             
             if incident_type:
+                any_incident_detected = True
                 active_incident = Incident.query.filter_by(
                     website_id=website.id,
                     incident_type=incident_type,
@@ -149,17 +152,19 @@ def monitor_website(app, website_id):
                     )
                     db.session.add(incident)
                     logger.warning(f"New incident detected for {name}: {incident_type}")
-            else:
-                active_incidents = Incident.query.filter_by(
-                    website_id=website.id,
-                    is_resolved=False
-                ).all()
-                
-                for incident in active_incidents:
-                    incident.is_resolved = True
-                    incident.ended_at = datetime.utcnow()
-                    incident.duration_seconds = int((incident.ended_at - incident.started_at).total_seconds())
-                    logger.info(f"Incident resolved for {name}: {incident.incident_type}")
+
+        # Outside the loop: Only resolve the crash if ALL URLs loaded successfully
+        if not any_incident_detected:
+            active_incidents = Incident.query.filter_by(
+                website_id=website.id,
+                is_resolved=False
+            ).all()
+            
+            for incident in active_incidents:
+                incident.is_resolved = True
+                incident.ended_at = datetime.utcnow()
+                incident.duration_seconds = int((incident.ended_at - incident.started_at).total_seconds())
+                logger.info(f"All subpages healthy! Incident resolved for {website.name}: {incident.incident_type}")
         
         db.session.commit()
         logger.info(f"Monitoring check completed for {website.name}")
@@ -178,30 +183,48 @@ def get_website_stats(website_id, period='day'):
     else:
         start_time = now - timedelta(days=1)
     
-    checks = MonitoringCheck.query.filter(
+    # Optimize checks retrieval using database aggregation (preventing memory crash)
+    total_checks = db.session.query(db.func.count(MonitoringCheck.id)).filter(
         MonitoringCheck.website_id == website_id,
         MonitoringCheck.checked_at >= start_time
-    ).all()
+    ).scalar() or 0
     
-    incidents = Incident.query.filter(
-        Incident.website_id == website_id,
-        Incident.started_at >= start_time
-    ).all()
+    up_checks = db.session.query(db.func.count(MonitoringCheck.id)).filter(
+        MonitoringCheck.website_id == website_id,
+        MonitoringCheck.checked_at >= start_time,
+        MonitoringCheck.is_up == True
+    ).scalar() or 0
     
-    total_checks = len(checks)
-    up_checks = sum(1 for c in checks if c.is_up)
     uptime_percentage = (up_checks / total_checks * 100) if total_checks > 0 else 100
     
-    response_times = [c.response_time for c in checks if c.response_time]
-    avg_response_time = sum(response_times) / len(response_times) if response_times else 0
+    avg_response_time = db.session.query(db.func.avg(MonitoringCheck.response_time)).filter(
+        MonitoringCheck.website_id == website_id,
+        MonitoringCheck.checked_at >= start_time,
+        MonitoringCheck.response_time.isnot(None)
+    ).scalar() or 0
     
-    total_downtime = sum(i.duration_seconds or 0 for i in incidents if i.is_resolved)
+    # Optimize incidents using similar DB math
+    incidents_data = db.session.query(
+        db.func.count(Incident.id).label('total'),
+        db.func.sum(Incident.duration_seconds).label('downtime')
+    ).filter(
+        Incident.website_id == website_id,
+        Incident.started_at >= start_time
+    ).first()
+    
+    total_incidents = incidents_data.total or 0
+    total_downtime = incidents_data.downtime or 0
+    
+    active_incidents = db.session.query(db.func.count(Incident.id)).filter(
+        Incident.website_id == website_id,
+        Incident.is_resolved == False
+    ).scalar() or 0
     
     return {
         'uptime_percentage': round(uptime_percentage, 2),
         'avg_response_time': round(avg_response_time, 2),
         'total_checks': total_checks,
-        'total_incidents': len(incidents),
-        'total_downtime_seconds': total_downtime,
-        'active_incidents': sum(1 for i in incidents if not i.is_resolved)
+        'total_incidents': total_incidents,
+        'total_downtime_seconds': int(total_downtime),
+        'active_incidents': active_incidents
     }
