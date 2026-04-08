@@ -34,8 +34,7 @@
     </div>
     <div class="col-md-3">
         <div class="card stat-card">
-            <div class="stat-value {% if stats.active_incidents > 0 %}text-danger{% endif %}">{{ stats.active_incidents
-                }}</div>
+            <div class="stat-value {% if stats.active_incidents > 0 %}text-danger{% endif %}">{{ stats.active_incidents }}</div>
             <div class="stat-label">Active Incidents</div>
         </div>
     </div>
@@ -136,7 +135,7 @@
             </div>
         </div>
     </div>
-
+    
     <div class="col-lg-6 mb-4">
         <div class="card">
             <div class="card-header bg-white">
@@ -194,8 +193,7 @@
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Full URL</label>
-                    <input type="url" class="form-control" id="subpageUrl" required
-                        placeholder="https://example.com/page">
+                    <input type="url" class="form-control" id="subpageUrl" required placeholder="https://example.com/page">
                 </div>
             </div>
             <div class="modal-footer">
@@ -209,67 +207,67 @@
 
 {% block scripts %}
 <script>
-    async function loadChart() {
-        const response = await fetch('/api/chart-data/{{ website.id }}?period={{ period }}');
-        const data = await response.json();
-
-        const ctx = document.getElementById('responseChart').getContext('2d');
-        new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: data.labels,
-                datasets: [{
-                    label: 'Response Time (ms)',
-                    data: data.response_times,
-                    borderColor: '#2563eb',
-                    backgroundColor: 'rgba(37, 99, 235, 0.1)',
-                    fill: true,
-                    tension: 0.4
-                }]
+async function loadChart() {
+    const response = await fetch('/api/chart-data/{{ website.id }}?period={{ period }}');
+    const data = await response.json();
+    
+    const ctx = document.getElementById('responseChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: data.labels,
+            datasets: [{
+                label: 'Response Time (ms)',
+                data: data.response_times,
+                borderColor: '#2563eb',
+                backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                fill: true,
+                tension: 0.4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false }
             },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { display: false }
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: { display: true, text: 'Response Time (ms)' }
                 },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        title: { display: true, text: 'Response Time (ms)' }
-                    },
-                    x: {
-                        display: true,
-                        ticks: { maxTicksLimit: 10 }
-                    }
+                x: {
+                    display: true,
+                    ticks: { maxTicksLimit: 10 }
                 }
             }
-        });
-    }
-
-    async function addSubpage() {
-        const data = {
-            name: document.getElementById('subpageName').value,
-            url: document.getElementById('subpageUrl').value
-        };
-
-        const response = await fetch('/api/websites/{{ website.id }}/subpages', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
-        });
-
-        if (response.ok) {
-            location.reload();
         }
-    }
+    });
+}
 
-    async function deleteSubpage(id) {
-        if (!confirm('Delete this subpage?')) return;
-        await fetch(`/api/subpages/${id}`, { method: 'DELETE' });
+async function addSubpage() {
+    const data = {
+        name: document.getElementById('subpageName').value,
+        url: document.getElementById('subpageUrl').value
+    };
+    
+    const response = await fetch('/api/websites/{{ website.id }}/subpages', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    });
+    
+    if (response.ok) {
         location.reload();
     }
+}
 
-    loadChart();
+async function deleteSubpage(id) {
+    if (!confirm('Delete this subpage?')) return;
+    await fetch(`/api/subpages/${id}`, {method: 'DELETE'});
+    location.reload();
+}
+
+loadChart();
 </script>
 {% endblock %}

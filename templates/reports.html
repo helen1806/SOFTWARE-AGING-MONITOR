@@ -34,18 +34,23 @@
             </div>
         </div>
     </div>
-    
+
     <div class="col-lg-8 mb-4">
         <div class="card" id="reportCard" style="display: none;">
             <div class="card-header bg-white d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="bi bi-file-text me-2"></i>Report Results</h5>
-                <button class="btn btn-sm btn-outline-primary" onclick="downloadReport()">
-                    <i class="bi bi-download me-1"></i>Export JSON
-                </button>
+                <div>
+                    <button class="btn btn-sm btn-outline-success me-2" onclick="promptEmailReport(event)">
+                        <i class="bi bi-envelope me-1"></i>Email Report
+                    </button>
+                    <button class="btn btn-sm btn-outline-primary" onclick="downloadReport()">
+                        <i class="bi bi-download me-1"></i>Export JSON
+                    </button>
+                </div>
             </div>
             <div class="card-body" id="reportContent"></div>
         </div>
-        
+
         <div class="card" id="noReportCard">
             <div class="card-body text-center py-5">
                 <i class="bi bi-file-earmark-bar-graph display-1 text-muted mb-3"></i>
@@ -59,33 +64,34 @@
 
 {% block scripts %}
 <script>
-let currentReport = null;
+    let currentReport = null;
+    let currentChart = null;
 
-async function generateReport() {
-    const websiteId = document.getElementById('reportWebsite').value;
-    const period = document.getElementById('reportPeriod').value;
-    
-    if (!websiteId) {
-        alert('Please select a website');
-        return;
-    }
-    
-    try {
-        const response = await fetch(`/api/report/${websiteId}?period=${period}`);
-        currentReport = await response.json();
-        displayReport(currentReport);
-    } catch (error) {
-        alert('Error generating report: ' + error.message);
-    }
-}
+    async function generateReport() {
+        const websiteId = document.getElementById('reportWebsite').value;
+        const period = document.getElementById('reportPeriod').value;
 
-function displayReport(report) {
-    document.getElementById('noReportCard').style.display = 'none';
-    document.getElementById('reportCard').style.display = 'block';
-    
-    const periodLabels = { week: 'Weekly', month: 'Monthly', year: 'Yearly' };
-    
-    let html = `
+        if (!websiteId) {
+            alert('Please select a website');
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/report/${websiteId}?period=${period}`);
+            currentReport = await response.json();
+            displayReport(currentReport);
+        } catch (error) {
+            alert('Error generating report: ' + error.message);
+        }
+    }
+
+    function displayReport(report) {
+        document.getElementById('noReportCard').style.display = 'none';
+        document.getElementById('reportCard').style.display = 'block';
+
+        const periodLabels = { week: 'Weekly', month: 'Monthly', year: 'Yearly' };
+
+        let html = `
         <div class="mb-4">
             <h4>${report.website}</h4>
             <p class="text-muted">${report.url}</p>
@@ -137,11 +143,16 @@ function displayReport(report) {
                 </tr>
             </table>
         </div>
+        
+        <h5 class="mb-3">Response Time Trend</h5>
+        <div class="chart-container mb-4" style="position: relative; height: 300px;">
+            <canvas id="reportChartCanvas"></canvas>
+        </div>
     `;
-    
-    if (report.incidents.length > 0) {
-        html += `<h5 class="mb-3">Incident History</h5>`;
-        html += `<div class="table-responsive"><table class="table table-sm">
+
+        if (report.incidents.length > 0) {
+            html += `<h5 class="mb-3">Incident History</h5>`;
+            html += `<div class="table-responsive"><table class="table table-sm">
             <thead>
                 <tr>
                     <th>Type</th>
@@ -152,9 +163,9 @@ function displayReport(report) {
                 </tr>
             </thead>
             <tbody>`;
-        
-        for (const inc of report.incidents) {
-            html += `
+
+            for (const inc of report.incidents) {
+                html += `
                 <tr>
                     <td>${inc.type.replace('_', ' ')}</td>
                     <td><span class="badge bg-${inc.severity === 'critical' ? 'danger' : 'warning'}">${inc.severity}</span></td>
@@ -169,33 +180,101 @@ function displayReport(report) {
                     </td>
                 </tr>
             `;
+            }
+
+            html += `</tbody></table></div>`;
+        } else {
+            html += `<div class="alert alert-success"><i class="bi bi-check-circle me-2"></i>No incidents recorded during this period.</div>`;
+        }
+
+        document.getElementById('reportContent').innerHTML = html;
+
+        // Render Chart
+        const ctx = document.getElementById('reportChartCanvas').getContext('2d');
+        if (currentChart) {
+            currentChart.destroy();
         }
         
-        html += `</tbody></table></div>`;
-    } else {
-        html += `<div class="alert alert-success"><i class="bi bi-check-circle me-2"></i>No incidents recorded during this period.</div>`;
+        currentChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: report.chart_data.labels,
+                datasets: [{
+                    label: 'Response Time (ms)',
+                    data: report.chart_data.response_times,
+                    borderColor: '#2563eb',
+                    backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { beginAtZero: true, title: { display: true, text: 'Response Time (ms)' } },
+                    x: { display: true, ticks: { maxTicksLimit: 10 } }
+                }
+            }
+        });
     }
-    
-    document.getElementById('reportContent').innerHTML = html;
-}
 
-function formatDuration(seconds) {
-    if (!seconds || seconds === 0) return '0s';
-    if (seconds < 60) return seconds + 's';
-    if (seconds < 3600) return Math.round(seconds / 60) + 'm';
-    return Math.round(seconds / 3600) + 'h ' + Math.round((seconds % 3600) / 60) + 'm';
-}
+    function formatDuration(seconds) {
+        if (!seconds || seconds === 0) return '0s';
+        if (seconds < 60) return seconds + 's';
+        if (seconds < 3600) return Math.round(seconds / 60) + 'm';
+        return Math.round(seconds / 3600) + 'h ' + Math.round((seconds % 3600) / 60) + 'm';
+    }
 
-function downloadReport() {
-    if (!currentReport) return;
-    
-    const blob = new Blob([JSON.stringify(currentReport, null, 2)], {type: 'application/json'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `report_${currentReport.website}_${currentReport.period}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-}
+    function downloadReport() {
+        if (!currentReport) return;
+
+        const blob = new Blob([JSON.stringify(currentReport, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `report_${currentReport.website}_${currentReport.period}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    async function promptEmailReport(event) {
+        if (!currentReport || !currentChart) return;
+        
+        if (!confirm("Send this report to your registered email address?")) return;
+
+        // Securely capture the chart as a Base64 image snapshot
+        const imageBase64 = currentChart.toBase64Image();
+
+        const btn = event.currentTarget || event.target;
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Sending...';
+        btn.disabled = true;
+
+        try {
+            const response = await fetch('/api/report/email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    report: currentReport,
+                    chart_image: imageBase64
+                })
+            });
+
+            const result = await response.json();
+            
+            if (response.ok) {
+                alert('Email sent successfully!');
+            } else {
+                alert('Failed to send email: ' + (result.message || response.statusText));
+            }
+        } catch (error) {
+            alert('Error sending email: ' + error.message);
+        } finally {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    }
 </script>
 {% endblock %}

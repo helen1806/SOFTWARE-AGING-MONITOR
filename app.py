@@ -1,4 +1,8 @@
 import os
+import smtplib
+import base64
+from email.message import EmailMessage
+from email.utils import make_msgid
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session, abort
 from flask_sqlalchemy import SQLAlchemy
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -239,6 +243,10 @@ def generate_report(website_id):
 
     response_times = [c.response_time for c in checks if c.response_time]
 
+    chart_labels = [c.checked_at.strftime('%Y-%m-%d %H:%M') for c in checks]
+    chart_response_times = [c.response_time if c.response_time else 0 for c in checks]
+    chart_statuses = [1 if c.is_up else 0 for c in checks]
+
     return jsonify({
         'website': website.name,
         'url': website.url,
@@ -250,8 +258,113 @@ def generate_report(website_id):
             'min': min(response_times) if response_times else 0,
             'max': max(response_times) if response_times else 0,
             'avg': sum(response_times) / len(response_times) if response_times else 0
+        },
+        'chart_data': {
+            'labels': chart_labels,
+            'response_times': chart_response_times,
+            'status': chart_statuses
         }
     })
+
+
+@app.route('/api/report/email', methods=['POST'])
+@login_required
+def send_report_email():
+    data = request.json
+    report = data.get('report')
+    chart_image_data = data.get('chart_image')
+    
+    # Strictly bind the email to the authenticated user's session
+    recipient_email = session.get('user_email')
+
+    if not recipient_email:
+        return jsonify({'message': 'Unable to determine your registered email address.'}), 400
+
+    if not report:
+        return jsonify({'message': 'Missing report data'}), 400
+
+    smtp_server = os.environ.get('SMTP_SERVER')
+    smtp_port = int(os.environ.get('SMTP_PORT', 587))
+    smtp_user = os.environ.get('SMTP_USER')
+    smtp_password = os.environ.get('SMTP_PASSWORD')
+
+    if not all([smtp_server, smtp_user, smtp_password]):
+        return jsonify({'message': 'Email sending is not configured on the server. Please set SMTP variables in .env.'}), 500
+
+    try:
+        msg = EmailMessage()
+        msg['Subject'] = f"Performance Report: {report.get('website')} ({report.get('period').title()})"
+        msg['From'] = smtp_user
+        msg['To'] = recipient_email
+
+        # Build inline image ID
+        image_cid = make_msgid(domain='softwareagingmonitor.local')
+
+        # Provide a basic text fallback
+        msg.set_content(f"Performance report for {report.get('website')} is ready. View it with an HTML compatible email viewer.")
+
+        stats = report.get('stats', {})
+        html_content = f"""
+        <html>
+        <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
+            <div style="max-width: 600px; margin: 0 auto; border: 1px solid #ddd; border-radius: 8px; overflow: hidden;">
+                <div style="background-color: #f8f9fa; padding: 20px; border-bottom: 1px solid #ddd;">
+                    <h2 style="margin: 0; color: #2563eb;">Performance Report</h2>
+                    <h3 style="margin: 5px 0 0 0; color: #555;">{report.get('website')}</h3>
+                    <p style="margin: 5px 0 0 0; color: #777; font-size: 0.9em;">
+                        URL: <a href="{report.get('url')}">{report.get('url')}</a><br>
+                        Period: {report.get('period').title()} 
+                    </p>
+                </div>
+                
+                <div style="padding: 20px;">
+                    <h3 style="margin-top: 0;">Quick Statistics</h3>
+                    <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+                        <tr>
+                            <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Uptime:</strong></td>
+                            <td style="padding: 10px; border-bottom: 1px solid #eee; color: #16a34a; font-weight: bold;">{stats.get('uptime_percentage', 0)}%</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Avg Response Time:</strong></td>
+                            <td style="padding: 10px; border-bottom: 1px solid #eee;">{int(stats.get('avg_response_time', 0))} ms</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Total Incidents:</strong></td>
+                            <td style="padding: 10px; border-bottom: 1px solid #eee; color: #ea580c;">{stats.get('total_incidents', 0)}</td>
+                        </tr>
+                    </table>
+
+                    <h3 style="margin-top: 30px;">Response Time Trend</h3>
+                    <p style="font-size: 0.9em; color: #666;">Below is the chart captured from the dashboard at the time of this report generation.</p>
+                    <img src="cid:{image_cid[1:-1]}" style="max-width: 100%; height: auto; border: 1px solid #eee; border-radius: 4px;" alt="Performance Chart">
+                </div>
+                
+                <div style="background-color: #f8f9fa; padding: 15px; text-align: center; border-top: 1px solid #ddd; font-size: 0.85em; color: #777;">
+                    Generated by Software Aging Monitor
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+        msg.add_alternative(html_content, subtype='html')
+
+        # Decode base64 image and attach it inline to the HTML payload
+        if chart_image_data and chart_image_data.startswith('data:image/png;base64,'):
+            img_b64 = chart_image_data.split('data:image/png;base64,')[1]
+            img_bytes = base64.b64decode(img_b64)
+            # msg.get_payload()[1] gets the HTML alternative part
+            msg.get_payload()[1].add_related(img_bytes, 'image', 'png', cid=image_cid)
+
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_password)
+            server.send_message(msg)
+
+        return jsonify({'message': 'Email sent successfully'})
+
+    except Exception as e:
+        return jsonify({'message': str(e)}), 500
 
 
 @app.route('/api/websites', methods=['GET', 'POST'])
